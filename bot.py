@@ -26,6 +26,35 @@ bot.remove_command('help')
 # Import the Mistral agent from the agent.py file
 agent = MistralAgent()
 
+# Track last message time for each channel
+channel_last_message = {}
+INACTIVITY_TIMEOUT = 120  # 2 minutes in seconds
+
+async def clear_inactive_channels():
+    """Background task to clear inactive channels"""
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        current_time = asyncio.get_event_loop().time()
+        
+        # Check each channel's last activity
+        for channel_id, last_time in list(channel_last_message.items()):
+            if current_time - last_time >= INACTIVITY_TIMEOUT:
+                try:
+                    channel = bot.get_channel(channel_id)
+                    if channel and channel.permissions_for(channel.guild.me).manage_messages:
+                        # Send warning message
+                        warning = await channel.send("⚠️ Clearing chat due to 2 minutes of inactivity...")
+                        await asyncio.sleep(3)  # Give users a moment to see the message
+                        
+                        await channel.purge(limit=None)
+                        await channel.send(INSTRUCTIONS)
+                        logger.info(f"Cleared {channel.name} due to inactivity")
+                        channel_last_message[channel_id] = current_time
+                except Exception as e:
+                    logger.error(f"Error clearing inactive channel {channel_id}: {e}")
+        
+        await asyncio.sleep(30)  # Check every 30 seconds
+
 # Bot instructions
 INSTRUCTIONS = """
 🌟 **Welcome to Finna - Your Financial Journaling Workbook!** 📈
@@ -45,9 +74,7 @@ Finna helps you track and analyze your investment ideas. Here's how to use it:
   - Risk analysis
   - Long-term investment considerations
 
-🛠 **Commands:**
-• `!help` - Show these instructions
-• `!clear [number]` - Clear messages (admin only)
+⏰ **Note:** For demo and privacy purposes, chat will be automatically cleared after 2 minutes of inactivity.
 
 Start journaling your investment ideas and let Finna help you make informed decisions! 💡
 """
@@ -66,6 +93,9 @@ async def on_ready():
     """
     logger.info(f"{bot.user} has connected to Discord!")
     
+    # Start the background task for clearing inactive channels
+    bot.loop.create_task(clear_inactive_channels())
+    
     # Clear messages and show instructions in all text channels the bot can see
     for guild in bot.guilds:
         for channel in guild.text_channels:
@@ -77,6 +107,8 @@ async def on_ready():
                     logger.info(f"Cleared messages in {channel.name}")
                     # Send welcome message with instructions
                     await channel.send(INSTRUCTIONS)
+                    # Initialize last message time
+                    channel_last_message[channel.id] = asyncio.get_event_loop().time()
             except Exception as e:
                 logger.error(f"Error clearing messages in {channel.name}: {e}")
 
@@ -88,6 +120,9 @@ async def on_message(message: discord.Message):
 
     https://discordpy.readthedocs.io/en/latest/api.html#discord.on_message
     """
+    # Update last message time for the channel
+    channel_last_message[message.channel.id] = asyncio.get_event_loop().time()
+    
     # Don't delete this line! It's necessary for the bot to process commands.
     await bot.process_commands(message)
 
