@@ -100,8 +100,9 @@ async def on_message(message: discord.Message):
     logger.info(f"Processing message from {message.author}: {message.content}")
     response = await agent.run(message)
 
-    # Send the response back to the channel
-    await message.reply(response)
+    # Send the response back to the channel if there is one
+    if response:
+        await message.reply(response)
 
 
 # Commands
